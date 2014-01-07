@@ -2,6 +2,7 @@
 __version__ = "1.0.0"
 
 
+import json
 import base64
 from collections import defaultdict
 import hashlib
@@ -104,8 +105,11 @@ class Signer(object):
         if isinstance(payload, basestring):
             return {unicode(parent_key): unicode(payload)}
 
+        if payload in (None, True, False):
+            return {unicode(parent_key), json.dumps(payload)}
+
         if isinstance(payload, int):
-            return {unicode(parent_key): int(payload)}
+            return {unicode(parent_key): payload}
 
         items = []
         for k, v in payload.items() if hasattr(payload, 'items') else payload:
@@ -117,8 +121,13 @@ class Signer(object):
                     list_key = "{}_{}".format(new_key, count)
                     items.extend(self._flatten(val, list_key).items())
             else:
+                if v == '':
+                    v = None
                 if isinstance(v, basestring):
                     v = unicode(v)
-                items.append((unicode(new_key), v if v else None))
+                if v in (None, True, False):
+                    items.append((unicode(new_key), json.dumps(v)))
+                else:
+                    items.append((unicode(new_key), v))
 
         return dict(items)
