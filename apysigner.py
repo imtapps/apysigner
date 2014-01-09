@@ -1,5 +1,5 @@
 
-__version__ = "1.0.0"
+__version__ = "0.0.3"
 
 
 import base64
@@ -71,7 +71,8 @@ class Signer(object):
 
         url_to_sign = url.path + '?' + url.query
 
-        encoded_payload = self._encode_payload(payload)
+        unicode_payload = self._convert(payload)
+        encoded_payload = self._encode_payload(unicode_payload)
 
         decoded_key = base64.urlsafe_b64decode(self.private_key.encode('utf-8'))
         signature = hmac.new(decoded_key, url_to_sign + encoded_payload, hashlib.sha256)
@@ -87,10 +88,11 @@ class Signer(object):
             Can be a dictionary or it can be an iterable of
             two items, first being key, second being value(s).
         """
-        if payload in (None, ''):
+        if payload is None:
             return ''
 
-        payload = self._flatten(payload).items()
+        if hasattr(payload, 'items'):
+            payload = payload.items()
 
         p = defaultdict(list)
         for k, v in payload:
@@ -99,26 +101,12 @@ class Signer(object):
 
         return urllib.urlencode(ordered_params, True)
 
-    def _flatten(self, payload, parent_key=''):
-
-        if isinstance(payload, basestring):
-            return {unicode(parent_key): unicode(payload)}
-
-        if isinstance(payload, int):
-            return {unicode(parent_key): int(payload)}
-
-        items = []
-        for k, v in payload.items() if hasattr(payload, 'items') else payload:
-            new_key = "{}_{}".format(parent_key, k) if parent_key else k
-            if isinstance(v, dict):
-                items.extend(self._flatten(v, new_key).items())
-            elif isinstance(v, (tuple, list)):
-                for count, val in enumerate(v):
-                    list_key = "{}_{}".format(new_key, count)
-                    items.extend(self._flatten(val, list_key).items())
-            else:
-                if isinstance(v, basestring):
-                    v = unicode(v)
-                items.append((unicode(new_key), v if v else None))
-
-        return dict(items)
+    def _convert(self, payload):
+        if isinstance(payload, dict):
+            return {self._convert(key): self._convert(value) for key, value in dict(sorted(payload.iteritems(), key=lambda x: x[0])).iteritems()}
+        elif isinstance(payload, list):
+            return [self._convert(element) for element in payload]
+        elif isinstance(payload, str):
+            return unicode(payload)
+        else:
+            return payload
