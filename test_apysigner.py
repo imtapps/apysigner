@@ -85,7 +85,7 @@ class SignatureMakerTests(TestCase):
         base_url = 'http://www.example.com/accounts/user/add/'
         data = {'coverages': [{'construction_type': u'', 'premium': None, 'fire_class': None, 'optional_coverages': [{'construction_type': u'', 'irpms': [], 'fire_class': None, 'deductible_code': u'500', 'coverage_amount': '100000', 'territory': None, 'rate_code': u'033', 'year_built': None}], 'rate_code': u'005', 'property_id': '6b86b273ff3', 'packages': [], 'year_built': None, 'coverage_amount': '100000', 'irpms': [], 'deductible_code': u'500', 'territory': None}, {'construction_type': u'', 'premium': None, 'fire_class': None, 'optional_coverages': [], 'rate_code': u'015', 'property_id': 'd4735e3a265', 'packages': [{'rate_code': u'017', 'irpms': [], 'construction_type': u'', 'deductible_code': u'500', 'fire_class': None, 'rateable_amount': 10000, 'territory': None, 'property_id': '6b86b273ff3'}], 'year_built': None, 'coverage_amount': '100000', 'irpms': [], 'deductible_code': u'500', 'territory': None}, {'construction_type': u'', 'premium': None, 'fire_class': None, 'optional_coverages': [{'construction_type': u'', 'irpms': [], 'fire_class': None, 'deductible_code': u'500', 'coverage_amount': '100000', 'territory': None, 'rate_code': u'033', 'year_built': None}], 'rate_code': u'002', 'property_id': '4e07408562b', 'packages': [], 'year_built': None, 'coverage_amount': '100000', 'irpms': [u'RCC'], 'deductible_code': u'500', 'territory': None}], 'producer': u'matt.morrison', 'policy_type': u'FM', 'policy': {'effective_date': None, 'path': 'APPS9690', 'apps_key': u'FM', 'discount_a': u'1'}, 'company': 9690, 'agency': None, 'policy_id': 1}
         signature = get_signature(self.private_key, base_url, data)
-        expected_signature = 'YnL2SAIWcRfuEmRF0IBwK7Sh0AdTfcVV-zktoUa1VbA='
+        expected_signature = 'AJfz5X9RV_1XIp4jEiUj-9pdOBj6-bPgGMgFVqb-CN0='
         self.assertEqual(expected_signature, signature)
 
     def test_convert_function_will_also_sort_dict_based_on_key(self):
@@ -144,14 +144,14 @@ class SignatureMakerTests(TestCase):
         self.assertEqual(new, {'a_b_c': 'd'})
 
     def test_flattens_nested_lists(self):
-        orig = {'a': {'b': {'c': ['d']}}}
+        orig = {'a': {'b': {'c': ['d', 'e']}}}
         new = self.signer._flatten(orig)
-        self.assertEqual(new, {'a_b_c_0': 'd'})
+        self.assertEqual(new, {'a_b_c_0': 'd', 'a_b_c_1': 'e'})
 
     def test_flattens_dictionaries_nested_in_lists(self):
-        orig = {'a': {'b': {'c': [{'d': 'e'}]}}}
+        orig = {'a': {'b': {'c': [{'d': 'e'}, {'f': 'g'}]}}}
         new = self.signer._flatten(orig)
-        self.assertEqual(new, {'a_b_c_0_d': 'e'})
+        self.assertEqual(new, {'a_b_c_0_d': 'e', 'a_b_c_1_f': 'g'})
 
     def test_flattens_complex_example(self):
         orig = {'a': {'b': {'c': ({'d': 'e'}, {'f': ['1', u'2', 3]})}}}
@@ -202,17 +202,47 @@ class SignatureMakerTests(TestCase):
 
     def test_payload_with_different_value_types(self):
         base_url = 'http://imtapps.com/?a=1&b=2'
-        payload = {'a': [{'b': 1, 'c': '2'}], 'd': 3, 'e': '4'}
+        payload = {'a': [{'b': 1, 'c': '2'}, 1], 'd': 3, 'e': '4'}
 
         url = urlparse.urlparse(base_url)
         url_to_sign = url.path + '?' + url.query
         encoded_payload = self.signer._encode_payload(payload)
-        self.assertEqual('a_0_b=1&a_0_c=2&d=3&e=4', encoded_payload)
+        self.assertEqual('a_0_b=1&a_0_c=2&a_1=1&d=3&e=4', encoded_payload)
 
         decoded_key = base64.urlsafe_b64decode(self.private_key.encode('utf-8'))
         signature = hmac.new(decoded_key, url_to_sign + encoded_payload, hashlib.sha256)
         result = base64.urlsafe_b64encode(signature.digest())
-        self.assertEqual('MffDTVewB2qggHBHSczq1AyTFx0PNdogoJSZji7n-74=', result)
+        self.assertEqual('S5CsOh-jG4Rff59COn0PV5JsmqLxTnoJ1q4Zl-w3Yyo=', result)
+
+        actual = self.signer.create_signature(base_url, payload)
+        self.assertEqual(result, actual)
+
+    def test_does_not_add_list_index_when_only_one_item_to_handle_multi_value_dicts(self):
+        base_url = 'http://imtapps.com/?a=1&b=2'
+        url = urlparse.urlparse(base_url)
+        url_to_sign = url.path + '?' + url.query
+        payload = {'hi': ['8']}
+        encoded_payload = self.signer._encode_payload(payload)
+        self.assertEqual('hi=8', encoded_payload)
+        decoded_key = base64.urlsafe_b64decode(self.private_key.encode('utf-8'))
+        signature = hmac.new(decoded_key, url_to_sign + encoded_payload, hashlib.sha256)
+        result = base64.urlsafe_b64encode(signature.digest())
+        self.assertEqual('T5Lnys4I45eBWdm9NxVInosFv8gl8rt17YwvqKxAzKI=', result)
+
+        actual = self.signer.create_signature(base_url, payload)
+        self.assertEqual(result, actual)
+
+    def test_does_not_add_list_index_when_only_one_item_and_nested_objects(self):
+        base_url = 'http://imtapps.com/?a=1&b=2'
+        url = urlparse.urlparse(base_url)
+        url_to_sign = url.path + '?' + url.query
+        payload = {"hi": {"sub": "asdf", "subwithlist": ["8"]}, "helloagain": "something"}
+        encoded_payload = self.signer._encode_payload(payload)
+        self.assertEqual('helloagain=something&hi_sub=asdf&hi_subwithlist=8', encoded_payload)
+        decoded_key = base64.urlsafe_b64decode(self.private_key.encode('utf-8'))
+        signature = hmac.new(decoded_key, url_to_sign + encoded_payload, hashlib.sha256)
+        result = base64.urlsafe_b64encode(signature.digest())
+        self.assertEqual('0jiGHS_BvQOBKiGO7kr0Hnsi9XpHhZ2k2Sj0vQ0Hd1Y=', result)
 
         actual = self.signer.create_signature(base_url, payload)
         self.assertEqual(result, actual)

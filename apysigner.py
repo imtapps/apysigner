@@ -106,7 +106,7 @@ class Signer(object):
             return {unicode(parent_key): unicode(payload)}
 
         if payload in (None, True, False):
-            return {unicode(parent_key), json.dumps(payload)}
+            return {unicode(parent_key): json.dumps(payload)}
 
         if isinstance(payload, int):
             return {unicode(parent_key): payload}
@@ -117,9 +117,12 @@ class Signer(object):
             if isinstance(v, dict):
                 items.extend(self._flatten(v, new_key).items())
             elif isinstance(v, (tuple, list)):
-                for count, val in enumerate(v):
-                    list_key = "{}_{}".format(new_key, count)
-                    items.extend(self._flatten(val, list_key).items())
+                if len(v) == 1:
+                    items.extend(self._flatten(v[0], new_key).items())
+                else:
+                    for count, val in enumerate(v):
+                        list_key = "{}_{}".format(new_key, count)
+                        items.extend(self._flatten(val, list_key).items())
             else:
                 if v == '':
                     v = None
